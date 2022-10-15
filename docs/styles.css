@@ -1,0 +1,125 @@
+.description-div {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  flex-grow: 2;
+  width: 100%!important;
+  height: 100%!important;
+}
+
+.description-block {
+  margin-top: 10px;
+  margin-right: 0px;
+  margin-left: 0px;
+  margin-bottom: 5px;
+  padding-bottom: 0px!important;
+  text-align: center;
+  height: 45%!important;
+  width: 48%!important;
+}
+.border-full {
+  border: 1px solid rgb(222, 226, 230)!important;
+}
+.border-l {
+  border-top: 1px solid rgb(222, 226, 230)!important;
+  border-right: 1px solid rgb(222, 226, 230)!important;
+  border-bottom: 1px solid rgb(222, 226, 230)!important;
+  border-left: 1px solid rgb(43, 43, 43)!important;
+}
+.border-r {
+  border-top: 1px solid rgb(222, 226, 230)!important;
+  border-right: 1px solid rgb(43, 43, 43)!important;
+  border-bottom: 1px solid rgb(222, 226, 230)!important;
+  border-left: 1px solid rgb(222, 226, 230)!important;
+}
+
+
+.colr-black {
+  background-color: rgba(75,82,92,1);
+  color: rgb(255, 255, 255);
+}
+.colr-green {
+  background-color: rgba(86,219,205,1);
+  color: rgb(0, 0, 0);
+}
+.colr-yellow {
+  background-color: rgba(255,170,85,1);
+  color: rgb(0, 0, 0);
+}
+/* margin: 10px 0;  */
+
+.two-col-div {
+  display: flex;
+  direction: row;
+  align-items: center;
+}
+
+
+
+.first-text {
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.first-value-w {
+  font-size: 28px;
+  font-weight: 600;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgb(222, 226, 230);
+}
+.first-value-b {
+  font-size: 28px;
+  font-weight: 600;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgb(43, 43, 43);
+}
+
+.second-text {
+  font-size: 15px;
+  font-weight: 500;
+  width: 50%;
+  padding-top: 8px;
+  padding-bottom: 5px;
+  /*margin: 0px;
+  padding: 0px;*/
+}
+
+.second-value {
+  font-size: 18px;
+  font-weight: 600;
+  width: 50%;
+}
+
+
+.pad {
+  padding-right: 7px;
+  padding-left: 7px;
+}
+
+.tab-output {
+  margin: 10px!important;
+}
+
+
+
+.description-block>.description-text-percent {
+  color: #969696;
+}
+
+
+.description-block>.description-value {
+  font-size: 16px;
+  font-weight: bold;
+  color: #111111;
+}
+
+
+#section-25>.chart-stage-flex {
+  min-height: 610px;
+}
+#section-26>.chart-stage-flex {
+  min-height: 880px;
+}
+#section-27>.chart-stage-flex {
+  min-height: 800px;
+}

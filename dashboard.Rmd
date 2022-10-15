@@ -1,0 +1,895 @@
+---
+title: "Hotel Revenue Management"
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: scroll
+    css: styles.css
+    theme:
+      version: 5
+      bootswatch: "lux"
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shinydashboard)
+library(shiny)
+library(echarts4r)
+library(highcharter)
+library(reactable)
+library(reactablefmtr)
+library(fontawesome)
+```
+
+```{r}
+source("C:/Users/AYOMIDE/Documents/R/R_Projects/hotel_revenue/hotel_dashboard/functions.R",
+       local = knitr::knit_global())
+
+source("C:/Users/AYOMIDE/Documents/R/R_Projects/hotel_revenue/hotel_dashboard/function_ui.R",
+       local = knitr::knit_global())
+
+source("C:/Users/AYOMIDE/Documents/R/R_Projects/hotel_revenue/hotel_dashboard/global.R",
+       local = knitr::knit_global())
+```
+
+
+```{r}
+hr <- purrr::map_dfr(
+  c(1, 2, 3),
+  ~readxl::read_excel("~/DataG/hotel_222/Hotel Revenue Management.xlsx", sheet = .x)
+)
+
+discount <- readxl::read_excel("~/DataG/hotel_222/Hotel Revenue Management.xlsx", 
+                               sheet = 4, skip = 1)
+
+meal_cost <- readxl::read_excel("~/DataG/hotel_222/Hotel Revenue Management.xlsx", 
+                                sheet = 5, skip = 1)
+
+full_country_name <- readr::read_csv("C:/Users/AYOMIDE/Documents/DataG/country_code.csv")
+
+discount <- discount |>
+  dplyr::mutate(Discount = as.numeric(Discount)) |>
+  dplyr::rename(discount_applied = Discount)
+
+meal_cost <- meal_cost |>
+  dplyr::mutate(Cost = as.numeric(Cost)) |>
+  dplyr::rename(meal_cost = Cost)
+
+month_number <- setNames(month.name, 1:12)
+
+names_country <- dplyr::select(hr, country) |>
+  dplyr::left_join(full_country_name, by = c("country" = "ISO3"), keep = TRUE) |>
+  dplyr::select(country, country_name) |>
+  tibble::deframe()
+
+hr <- hr |>
+  dplyr::inner_join(discount, by = "market_segment") |>
+  dplyr::inner_join(meal_cost, by = "meal") |>
+  dplyr::mutate(temp_month = as.character(forcats::fct_recode(arrival_date_month, !!!month_number)),
+                
+                arrival_date = stringr::str_glue("{arrival_date_year}-{temp_month}-{arrival_date_day_of_month}"),
+                
+                arrival_date = lubridate::as_date(arrival_date),
+                
+                avg_daily_rate = dplyr::case_when(is.na(adr) ~ `AVG Daily Rate`,
+                                                  !is.na(adr) ~ adr,
+                                                  TRUE ~ 1000000),
+                
+                children = dplyr::case_when(is.na(children) ~ 0, TRUE ~ children),
+                
+                stay_nights = stays_in_week_nights + stays_in_weekend_nights,
+                
+                revenue = (avg_daily_rate * stay_nights) + meal_cost,
+                
+                discount = revenue * discount_applied,
+                
+                net_revenue = revenue - discount,
+                
+                country = dplyr::if_else(country == "NULL", "Undefined", country),
+                nationality = names_country,
+                nationality = dplyr::case_when(country == "CN" ~ "China",
+                                               country == "GGY" ~ "Guernsey",
+                                               country == "IMN" ~ "isle of Man",
+                                               country == "MYT" ~ "Mayotte",
+                                               country == "Undefined" ~ "Undefined",
+                                               TRUE ~ nationality)
+  ) |>
+  dplyr::select(-c(temp_month, adr, `AVG Daily Rate`, country))
+```
+
+
+# All {data-navmenu="Overview" data-orientation="columns"}
+
+
+## overview_all_column1 {data-height=400 data-width=400}
+
+### Revenue
+```{r}
+revenue_box(
+  rev_variable_summary(hr, "net_revenue"),
+  rev_variable_summary(hr, "net_revenue", percent = TRUE),
+  rev_variable_summary(hr, "net_revenue", a_fun = "mean"),
+  
+  rev_variable_summary(hr, "avg_daily_rate"),
+  rev_variable_summary(hr, "avg_daily_rate", a_fun = "min"),
+  rev_variable_summary(hr, "avg_daily_rate", a_fun = "mean"),
+  
+  rev_variable_summary(hr, "discount"),
+  rev_variable_summary(hr, "discount", a_fun = "mean"),
+  rev_variable_summary(hr, "discount", a_fun = "max"),
+  
+  rev_variable_summary(hr, "meal_cost"),
+  rev_variable_summary(hr, "meal_cost", percent = TRUE),
+  rev_variable_summary(hr, "meal_cost", a_fun = "max")
+)
+
+```
+
+### Reservations
+```{r}
+stays <- days_stay_description(hr)
+
+reservation_box(
+  res_status_description(hr, "Check-Out"),
+  res_status_description(hr, "Canceled"),
+  res_status_description(hr, "No-Show"),
+  
+  lead_time_description(hr, "lead_time", a_fun = "mean"),
+  lead_time_description(hr, "lead_time", a_fun = "max"),
+  lead_time_description(hr, "waiting_list", a_fun = "max"),
+  
+  booking_changes_description(hr, "changed"),
+  booking_changes_description(hr, "no_changes"),
+  booking_changes_description(hr, "precent"),
+  
+  stays$median,
+  stays$minimum,
+  stays$maximum
+)
+
+```
+
+### Guest
+```{r}
+guest_box(
+  guest_description(hr, "all"),
+  guest_description(hr, "adult"),
+  guest_description(hr, "children"),
+  
+  repeated_guest_description(hr, "repeated"),
+  repeated_guest_description(hr, "no_repeat"),
+  repeated_guest_description(hr, "percent_repeat"),
+  
+  nationality_description(hr, "country"),
+  nationality_description(hr, "continent"),
+  nationality_description(hr, "top_national"),
+  
+  special_request_description(hr, "total"),
+  special_request_description(hr, "max"),
+  special_request_description(hr, "precent")
+)
+```
+
+
+## overview_all_column2 {data-height=400 data-width=600}
+
+###  {.no-title}
+```{r}
+tabset_panel_output(
+  arrival_date_revenue(hr, "net_revenue", 2020, colr = c(rev_colr1, rev_colr2)),
+  
+  arrival_date_revenue(hr, "net_revenue", 2019, colr = c(rev_colr1, rev_colr2)),
+  
+  arrival_date_revenue(hr, "net_revenue", 2018, colr = c(rev_colr1, rev_colr2))
+)
+```
+
+###  {.no-title}
+```{r}
+tabset_panel_output(
+  arrival_count(hr, 2020, colr = c(res_colr1, res_colr2)),
+  
+  arrival_count(hr, 2019, colr = c(res_colr1, res_colr2)),
+  
+  arrival_count(hr, 2018, colr = c(res_colr1, res_colr2))
+)
+```
+
+###  {.no-title}
+```{r}
+tabset_panel_output(
+  n_guest_arrival_date(hr, 2020, a_fun = "sum", colr = c(gst_colr1, gst_colr2)),
+  
+  n_guest_arrival_date(hr, 2019, a_fun = "sum", colr = c(gst_colr1, gst_colr2)),
+  
+  n_guest_arrival_date(hr, 2018, a_fun = "sum", colr = c(gst_colr1, gst_colr2))
+)
+```
+
+
+
+# City Hotel {data-navmenu="Overview" data-orientation="columns"}
+
+
+## overview_ch_column1 {data-height=400 data-width=400}
+
+### Revenue
+```{r}
+revenue_box(
+  rev_variable_summary(hr, "net_revenue", "City Hotel"),
+  rev_variable_summary(hr, "net_revenue", "City Hotel", percent = TRUE),
+  rev_variable_summary(hr, "net_revenue", "City Hotel",  a_fun = "mean"),
+  
+  rev_variable_summary(hr, "avg_daily_rate", "City Hotel"),
+  rev_variable_summary(hr, "avg_daily_rate", "City Hotel", a_fun = "min"),
+  rev_variable_summary(hr, "avg_daily_rate", "City Hotel", a_fun = "mean"),
+  
+  rev_variable_summary(hr, "discount", "City Hotel"),
+  rev_variable_summary(hr, "discount", "City Hotel", a_fun = "mean"),
+  rev_variable_summary(hr, "discount", "City Hotel", a_fun = "max"),
+  
+  rev_variable_summary(hr, "meal_cost", "City Hotel"),
+  rev_variable_summary(hr, "meal_cost", "City Hotel", percent = TRUE),
+  rev_variable_summary(hr, "meal_cost", "City Hotel",  a_fun = "max")
+)
+```
+
+### Reservations
+```{r}
+ch_stays <- days_stay_description(hr, "City Hotel")
+
+reservation_box(
+  res_status_description(hr, "Check-Out", "City Hotel"),
+  res_status_description(hr, "Canceled", "City Hotel"),
+  res_status_description(hr, "No-Show", "City Hotel"),
+  
+  lead_time_description(hr, "lead_time", "City Hotel", a_fun = "mean"),
+  lead_time_description(hr, "lead_time", "City Hotel", a_fun = "max"),
+  lead_time_description(hr, "waiting_list", "City Hotel", a_fun = "max"),
+  
+  booking_changes_description(hr, "changed", "City Hotel"),
+  booking_changes_description(hr, "no_changes", "City Hotel"),
+  booking_changes_description(hr, "precent", "City Hotel"),
+  
+  ch_stays$median,
+  ch_stays$minimum,
+  ch_stays$maximum
+)
+```
+
+### Guest
+```{r}
+guest_box(
+  guest_description(hr, "all", "City Hotel"),
+  guest_description(hr, "adult", "City Hotel"),
+  guest_description(hr, "children", "City Hotel"),
+  
+  repeated_guest_description(hr, "repeated", "City Hotel"),
+  repeated_guest_description(hr, "no_repeat", "City Hotel"),
+  repeated_guest_description(hr, "percent_repeat", "City Hotel"),
+  
+  nationality_description(hr, "country", "City Hotel"),
+  nationality_description(hr, "continent", "City Hotel"),
+  nationality_description(hr, "top_national", "City Hotel"),
+  
+  special_request_description(hr, "total", "City Hotel"),
+  special_request_description(hr, "max", "City Hotel"),
+  special_request_description(hr, "precent", "City Hotel")
+)
+```
+
+
+## overview_ch_column2 {data-height=400 data-width=600}
+
+###  {.no-title}
+```{r}
+tabset_panel_output(
+  arrival_date_revenue(hr, "net_revenue", 2020, "City Hotel",
+                       colr = c(rev_colr1, rev_colr2)),
+  
+  arrival_date_revenue(hr, "net_revenue", 2019, "City Hotel",
+                       colr = c(rev_colr1, rev_colr2)),
+  
+  arrival_date_revenue(hr, "net_revenue", 2018, "City Hotel",
+                       colr = c(rev_colr1, rev_colr2))
+)
+```
+
+###  {.no-title}
+```{r}
+tabset_panel_output(
+  arrival_count(hr, 2020, "City Hotel", colr = c(res_colr1, res_colr2)),
+  
+  arrival_count(hr, 2019, "City Hotel", colr = c(res_colr1, res_colr2)),
+  
+  arrival_count(hr, 2018, "City Hotel", colr = c(res_colr1, res_colr2))
+)
+```
+
+###  {.no-title}
+```{r}
+tabset_panel_output(
+  n_guest_arrival_date(hr, 2020, "City Hotel", a_fun = "sum",
+                       colr = c(gst_colr1, gst_colr2)),
+  
+  n_guest_arrival_date(hr, 2019, "City Hotel", a_fun = "sum",
+                       colr = c(gst_colr1, gst_colr2)),
+  
+  n_guest_arrival_date(hr, 2018, "City Hotel", a_fun = "sum",
+                       colr = c(gst_colr1, gst_colr2))
+)
+```
+
+
+
+# Resort Hotel {data-navmenu="Overview" data-orientation="columns"}
+
+
+## overview_rh_column1 {data-height=400 data-width=400}
+
+### Revenue
+```{r}
+revenue_box(
+  rev_variable_summary(hr, "net_revenue", "Resort Hotel"),
+  rev_variable_summary(hr, "net_revenue", "Resort Hotel", percent = TRUE),
+  rev_variable_summary(hr, "net_revenue", "Resort Hotel",  a_fun = "mean"),
+  
+  rev_variable_summary(hr, "avg_daily_rate", "Resort Hotel"),
+  rev_variable_summary(hr, "avg_daily_rate", "Resort Hotel", a_fun = "min"),
+  rev_variable_summary(hr, "avg_daily_rate", "Resort Hotel", a_fun = "mean"),
+  
+  rev_variable_summary(hr, "discount", "Resort Hotel"),
+  rev_variable_summary(hr, "discount", "Resort Hotel", a_fun = "mean"),
+  rev_variable_summary(hr, "discount", "Resort Hotel", a_fun = "max"),
+  
+  rev_variable_summary(hr, "meal_cost", "Resort Hotel"),
+  rev_variable_summary(hr, "meal_cost", "Resort Hotel", percent = TRUE),
+  rev_variable_summary(hr, "meal_cost", "Resort Hotel",  a_fun = "max")
+)
+```
+
+### Reservations
+```{r}
+rh_stays <- days_stay_description(hr, "Resort Hotel")
+
+reservation_box(
+  res_status_description(hr, "Check-Out", "Resort Hotel"),
+  res_status_description(hr, "Canceled", "Resort Hotel"),
+  res_status_description(hr, "No-Show", "Resort Hotel"),
+  
+  lead_time_description(hr, "lead_time", "Resort Hotel", a_fun = "mean"),
+  lead_time_description(hr, "lead_time", "Resort Hotel", a_fun = "max"),
+  lead_time_description(hr, "waiting_list", "Resort Hotel", a_fun = "max"),
+  
+  booking_changes_description(hr, "changed", "Resort Hotel"),
+  booking_changes_description(hr, "no_changes", "Resort Hotel"),
+  booking_changes_description(hr, "precent", "Resort Hotel"),
+  
+  rh_stays$median,
+  rh_stays$minimum,
+  rh_stays$maximum
+)
+```
+
+### Guest
+```{r}
+guest_box(
+  guest_description(hr, "all", "Resort Hotel"),
+  guest_description(hr, "adult", "Resort Hotel"),
+  guest_description(hr, "children", "Resort Hotel"),
+  
+  repeated_guest_description(hr, "repeated", "Resort Hotel"),
+  repeated_guest_description(hr, "no_repeat", "Resort Hotel"),
+  repeated_guest_description(hr, "percent_repeat", "Resort Hotel"),
+  
+  nationality_description(hr, "country", "Resort Hotel"),
+  nationality_description(hr, "continent", "Resort Hotel"),
+  nationality_description(hr, "top_national", "Resort Hotel"),
+  
+  special_request_description(hr, "total", "Resort Hotel"),
+  special_request_description(hr, "max", "Resort Hotel"),
+  special_request_description(hr, "precent", "Resort Hotel")
+)
+```
+
+
+## overview_rh_column2 {data-height=400 data-width=600}
+
+###  {.no-title}
+```{r}
+tabset_panel_output(
+  arrival_date_revenue(hr, "net_revenue", 2020, "Resort Hotel",
+                       colr = c(rev_colr1, rev_colr2)),
+  
+  arrival_date_revenue(hr, "net_revenue", 2019, "Resort Hotel",
+                       colr = c(rev_colr1, rev_colr2)),
+  
+  arrival_date_revenue(hr, "net_revenue", 2018, "Resort Hotel",
+                       colr = c(rev_colr1, rev_colr2))
+)
+```
+
+###  {.no-title}
+```{r}
+tabset_panel_output(
+  arrival_count(hr, 2020, "Resort Hotel", colr = c(res_colr1, res_colr2)),
+  
+  arrival_count(hr, 2019, "Resort Hotel", colr = c(res_colr1, res_colr2)),
+  
+  arrival_count(hr, 2018, "Resort Hotel", colr = c(res_colr1, res_colr2))
+)
+```
+
+###  {.no-title}
+```{r}
+tabset_panel_output(
+  n_guest_arrival_date(hr, 2020, "Resort Hotel", a_fun = "sum",
+                       colr = c(gst_colr1, gst_colr2)),
+  
+  n_guest_arrival_date(hr, 2019, "Resort Hotel", a_fun = "sum",
+                       colr = c(gst_colr1, gst_colr2)),
+  
+  n_guest_arrival_date(hr, 2018, "Resort Hotel", a_fun = "sum",
+                       colr = c(gst_colr1, gst_colr2))
+)
+```
+
+
+
+
+
+# All {data-navmenu="Revenue" data-orientation="rows"}
+
+
+## all_revenue_row1 {.tabset data-height=400}
+
+### 2020
+```{r}
+arrival_date_revenue(hr, "avg_daily_rate", 2020,
+                     colr = c(rev_colr$colr1, rev_colr$colr2))
+```
+
+### 2019
+```{r}
+arrival_date_revenue(hr, "avg_daily_rate", 2019,
+                     colr = c(rev_colr$colr1, rev_colr$colr2))
+```
+
+### 2018 \| Average Daily Rate
+```{r}
+arrival_date_revenue(hr, "avg_daily_rate", 2018,
+                     colr = c(rev_colr$colr1, rev_colr$colr2))
+```
+
+
+## all_revenue_row2 {.tabset data-height=400}
+
+### 2020
+```{r}
+arrival_date_revenue(hr, "revenue", 2020,
+                     colr = c(rev_colr$colr1, rev_colr$colr3))
+```
+
+### 2019
+```{r}
+arrival_date_revenue(hr, "revenue", 2019,
+                     colr = c(rev_colr$colr1, rev_colr$colr3))
+```
+
+### 2018 \| Revenue
+```{r}
+arrival_date_revenue(hr, "revenue", 2018,
+                     colr = c(rev_colr$colr1, rev_colr$colr3))
+```
+
+
+## all_revenue_row3 {.tabset data-height=400}
+
+### 2020
+```{r}
+arrival_date_revenue(hr, "meal_cost", 2020,
+                     colr = c(rev_colr$colr1, rev_colr$colr4))
+```
+
+### 2019
+```{r}
+arrival_date_revenue(hr, "meal_cost", 2019,
+                     colr = c(rev_colr$colr1, rev_colr$colr4))
+```
+
+### 2018 \| Meal Cost
+```{r}
+arrival_date_revenue(hr, "meal_cost", 2018,
+                     colr = c(rev_colr$colr1, rev_colr$colr4))
+```
+
+
+## all_revenue_row4 {.tabset data-height=400}
+
+### 2020
+```{r}
+arrival_date_revenue(hr, "discount", 2020,
+                     colr = c(rev_colr$colr1, rev_colr$colr5))
+```
+
+### 2019
+```{r}
+arrival_date_revenue(hr, "discount", 2019,
+                     colr = c(rev_colr$colr1, rev_colr$colr5))
+```
+
+### 2018 \| Discount
+```{r}
+arrival_date_revenue(hr, "discount", 2018,
+                     colr = c(rev_colr$colr1, rev_colr$colr5))
+```
+
+
+
+# City Hotel {data-navmenu="Revenue" data-orientation="columns"}
+
+
+## rev_ch_column1 {data-height=375 data-width=500}
+
+### Net Revenue
+```{r}
+net_revenue_dtms(hr, "market_segment", f_hotel = "City Hotel")
+```
+
+### Average Daily Rate
+```{r}
+avg_daily_rate_cmg(hr, "market_segment", f_hotel = "City Hotel")
+```
+
+### Meal Cost
+```{r}
+meal_revenue(hr, "customer_type", f_hotel = "City Hotel")
+```
+
+### Discount
+```{r}
+discount_ad(hr, "distribution_channel", f_hotel = "City Hotel")
+```
+
+
+## rev_ch_column2 {data-height="375" data-width="500"}
+
+### .
+```{r}
+net_revenue_dtms(hr, "deposit_type", f_hotel = "City Hotel")
+```
+
+### .
+```{r}
+avg_daily_rate_cmg(hr, "customer_type", f_hotel = "City Hotel")
+```
+
+### .
+```{r}
+meal_revenue(hr, "meal", f_hotel = "City Hotel")
+```
+
+### .
+```{r}
+discount_ad(hr, "agent", f_hotel = "City Hotel")
+```
+
+
+
+# Resort Hotel {data-navmenu="Revenue" data-orientation="columns"}
+
+
+## rev_ch_column1 {data-height=375 data-width=500}
+
+### Net Revenue
+```{r}
+net_revenue_dtms(hr, "market_segment", f_hotel = "Resort Hotel")
+```
+
+### Average Daily Rate
+```{r}
+avg_daily_rate_cmg(hr, "market_segment", f_hotel = "Resort Hotel")
+```
+
+### Meal Cost
+```{r}
+meal_revenue(hr, "customer_type", f_hotel = "Resort Hotel")
+```
+
+### Discount
+```{r}
+discount_ad(hr, "distribution_channel", f_hotel = "Resort Hotel")
+```
+
+
+## rev_ch_column2 {data-height=375 data-width=500}
+
+### .
+```{r}
+net_revenue_dtms(hr, "deposit_type", f_hotel = "Resort Hotel")
+```
+
+### .
+```{r}
+avg_daily_rate_cmg(hr, "customer_type", f_hotel = "Resort Hotel")
+```
+
+### .
+```{r}
+meal_revenue(hr, "meal", f_hotel = "Resort Hotel")
+```
+
+### .
+```{r}
+discount_ad(hr, "agent", f_hotel = "Resort Hotel")
+```
+
+
+
+
+
+# All {data-navmenu="Reservation" data-orientation="columns"}
+
+
+## res_all_column1 {.tabset data-height=880 data-width=600}
+
+### 2018
+```{r}
+guest_in_hotel(hr, 2018)
+```
+
+### 2019
+```{r}
+guest_in_hotel(hr, 2019)
+```
+
+### 2020
+```{r}
+guest_in_hotel(hr, 2020)
+```
+
+
+## res_all_column2 {data-height=440 data-width=400}
+
+### {.no-title}
+```{r}
+changed_bookings(hr)
+```
+
+### {.no-title}
+```{r}
+channels(hr)
+```
+
+
+
+# City Hotel {data-navmenu="Reservation" data-orientation="rows"}
+
+
+## res_ch_row1 {data-height=500 data-width=500}
+
+###  {.no-title}
+```{r}
+reserved_assigned_room(hr, "City Hotel")
+```
+
+###  {.no-title}
+```{r}
+deposit_customer_type(hr, "City Hotel")
+```
+
+
+## res_ch_row2 {data-height=400 data-width=500}
+
+### {.no-title}
+```{r}
+distribution_channel_lead_time(hr, "City Hotel")
+```
+
+### {.no-title}
+```{r}
+distribution_channel_res(hr, "City Hotel")
+```
+
+
+## res_ch_row3 {data-height=400 data-width=1000}
+
+### {.no-title}
+```{r}
+agent_previous_cancellation(hr, "City Hotel", n = 20)
+```
+
+
+## res_ch_row4 {.tabset data-height=400 data-width=1000}
+
+### Canceled
+```{r}
+reservation_status_date_count(hr, "Canceled", 2020, "City Hotel")
+```
+
+### Check-Out
+```{r}
+reservation_status_date_count(hr, "Check-Out", 2020, "City Hotel")
+```
+
+### No-Show
+```{r}
+reservation_status_date_count(hr, "No-Show", 2020, "City Hotel")
+```
+
+
+
+# Resort Hotel {data-navmenu="Reservation" data-orientation="rows"}
+
+
+## res_ch_row1 {data-height=550 data-width=500}
+
+###  {.no-title}
+```{r}
+reserved_assigned_room(hr, "Resort Hotel")
+```
+
+###  {.no-title}
+```{r}
+deposit_customer_type(hr, "Resort Hotel")
+```
+
+
+## res_ch_row2 {data-height=450 data-width=500}
+
+### {.no-title}
+```{r}
+distribution_channel_lead_time(hr, "Resort Hotel")
+```
+
+### {.no-title}
+```{r}
+distribution_channel_res(hr, "Resort Hotel")
+```
+
+
+## res_ch_row3 {data-height=400 data-width=1000}
+
+### {.no-title}
+```{r}
+agent_previous_cancellation(hr, "Resort Hotel", n = 20)
+```
+
+
+## res_ch_row4 {.tabset data-height=400 data-width=1000}
+
+### Canceled
+```{r}
+reservation_status_date_count(hr, "Canceled", 2020, "Resort Hotel")
+```
+
+### Check-Out
+```{r}
+reservation_status_date_count(hr, "Check-Out", 2020, "Resort Hotel")
+```
+
+### No-Show
+```{r}
+reservation_status_date_count(hr, "No-Show", 2020, "Resort Hotel")
+```
+
+
+
+
+
+# All {data-navmenu="Guest" data-orientation="rows"}
+
+## guest_all_row1 {data-height=400 data-width=1000 .tabset}
+
+### 2018
+```{r}
+stays_arrival_date(hr, 2018)
+```
+
+### 2019
+```{r}
+stays_arrival_date(hr, 2019)
+```
+
+### 2020
+```{r}
+stays_arrival_date(hr, 2020)
+```
+
+
+## guest_all_row2 {data-height=600 data-width=1000 .tabset}
+
+### 2018
+```{r}
+market_segment_guest(hr, 2018)
+```
+
+### 2019
+```{r}
+market_segment_guest(hr, 2019)
+```
+
+### 2020
+```{r}
+market_segment_guest(hr, 2020)
+```
+
+
+
+# City Hotel {data-navmenu="Guest" data-orientation="columns"}
+
+
+## guest_ch_column1 {data-height=400 data-width=500}
+
+### {.no-title}
+```{r}
+nationality_summary(hr, "count", "City Hotel")
+```
+
+### {.no-title}
+```{r}
+nationality_summary(hr, "lead_time", "City Hotel")
+```
+
+### {.no-title}
+```{r}
+market_segment_reserved_room_type(hr, "City Hotel")
+```
+
+
+## guest_ch_column2 {data-height=395 data-width=500}
+
+### {.no-title}
+```{r}
+continent_summary(hr, "City Hotel")
+```
+
+### {.no-title}
+```{r}
+customer_type_reservation_status_count(hr, "City Hotel")
+```
+
+### {.no-title}
+```{r}
+meal_count(hr, "City Hotel")
+```
+
+
+
+# Resort Hotel {data-navmenu="Guest" data-orientation="columns"}
+
+
+## guest_ch_column1 {data-height=400 data-width=500}
+
+### {.no-title}
+```{r}
+nationality_summary(hr, "count", "Resort Hotel")
+```
+
+### {.no-title}
+```{r}
+nationality_summary(hr, "lead_time", "Resort Hotel")
+```
+
+### {.no-title}
+```{r}
+market_segment_reserved_room_type(hr, "Resort Hotel")
+```
+
+
+## guest_ch_column2 {data-height=395 data-width=500}
+
+### {.no-title}
+```{r}
+continent_summary(hr, "Resort Hotel")
+```
+
+### {.no-title}
+```{r}
+customer_type_reservation_status_count(hr, "Resort Hotel")
+```
+
+### {.no-title}
+```{r}
+meal_count(hr, "Resort Hotel")
+```
+
